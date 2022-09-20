@@ -136,13 +136,21 @@ void Simulator::simulate()
     this->writeBack();
 
     if (!this->fReg.stall)
+    {
       this->fReg = this->fRegNew;
+    }
     else
+    {
       this->fReg.stall--;
+    }
     if (!this->dReg.stall)
+    {
       this->dReg = this->dRegNew;
+    }
     else
+    {
       this->dReg.stall--;
+    }
     this->eReg = this->eRegNew;
     this->mReg = this->mRegNew;
     memset(&this->fRegNew, 0, sizeof(this->fRegNew));
@@ -900,6 +908,7 @@ void Simulator::excecute()
     }
     break;
   case BNE:
+    /* printf("op1: %d, op2: %d\n", op1, op2); */
     if (op1 != op2)
     {
       branch = true;
@@ -1089,7 +1098,7 @@ void Simulator::excecute()
     readMem = true;
     writeReg = true;
     memLen = 4;
-    out = op1 + offset;
+    out = op1;
     readSignExt = true;
     _cas = true;
     break;
@@ -1097,21 +1106,24 @@ void Simulator::excecute()
     readMem = true;
     writeReg = true;
     memLen = 8;
-    out = op1 + offset;
+    out = op1;
     readSignExt = true;
     _cas = true;
     break;
   case SCW:
+    writeReg = true;
     writeMem = true;
     memLen = 4;
-    out = op1 + offset;
-    op2 = op2 & 0xFFFFFFFF;
+    out = op1;
     _cas = true;
+    op2 = op2 & 0xFFFFFFFF;
     break;
   case SCD:
+    writeReg = true;
     writeMem = true;
     memLen = 8;
-    out = op1 + offset;
+    out = op1;
+    op2 = op2 & 0xFFFFFFFF;
     _cas = true;
     break;
   case ECALL:
@@ -1243,15 +1255,76 @@ void Simulator::memoryAccess()
     {
     case 1:
       good = this->memory->setByte(out, op2, &cycles);
+      if ((out >= this->registry_addr) && (out <= (this->registry_addr + this->registry_num))) /* remove sign of lr addr */
+      {
+        this->registry_whe = false;
+      }
       break;
     case 2:
       good = this->memory->setShort(out, op2, &cycles);
+      for (uint32_t i = 0; i < 2; i++) /* remove sign of lr addr */
+      {
+        if (((out + i) >= this->registry_addr) && ((out + i) <= (this->registry_addr + this->registry_num)))
+        {
+          this->registry_whe = false;
+        }
+      }
       break;
     case 4:
-      good = this->memory->setInt(out, op2, &cycles);
+      if (_cas)
+      {
+        /* printf("Instruction sc.w is now enter memory.\n"); */
+        if (this->registry_whe && (this->registry_addr == out) && (this->registry_num == 4))
+        {
+          /* printf("Instruction sc.w is success.\n"); */
+          good = this->memory->setInt(out, op2, &cycles);
+          out = 0;
+        }
+        else
+        {
+          /* printf("Instruction sc.w fail.\n"); */
+          out = 1;
+        }
+        this->registry_whe = false;
+      }
+      else
+      {
+        for (uint32_t i = 0; i < 4; i++) /* remove sign of lr addr */
+        {
+          if (((out + i) >= this->registry_addr) && ((out + i) <= (this->registry_addr + this->registry_num)))
+          {
+            this->registry_whe = false;
+          }
+        }
+        good = this->memory->setInt(out, op2, &cycles);
+      }
       break;
     case 8:
-      good = this->memory->setLong(out, op2, &cycles);
+      if (_cas)
+      {
+        if (this->registry_whe && (this->registry_addr == out) && (this->registry_num == 8))
+        {
+          good = this->memory->setLong(out, op2, &cycles);
+          out = 0;
+        }
+        else
+        {
+          out = 1;
+        }
+        this->registry_whe = false;
+      }
+      else
+      {
+        for (uint32_t i = 0; i < 8; i++) /* remove sign of lr addr */
+        {
+          if (((out + i) >= this->registry_addr) && ((out + i) <= (this->registry_addr + this->registry_num)))
+          {
+            this->registry_whe = false;
+          }
+        }
+        good = this->memory->setLong(out, op2, &cycles);
+      }
+
       break;
     default:
       this->panic("Unknown memLen %d\n", memLen);
@@ -1290,6 +1363,12 @@ void Simulator::memoryAccess()
     case 4:
       if (readSignExt)
       {
+        if (_cas) /* add sign on lr addr */
+        {
+          this->registry_whe = true;
+          this->registry_addr = out;
+          this->registry_num = 4;
+        }
         out = (int64_t)this->memory->getInt(out, &cycles);
       }
       else
@@ -1300,6 +1379,12 @@ void Simulator::memoryAccess()
     case 8:
       if (readSignExt)
       {
+        if (_cas) /* add sign on lr addr */
+        {
+          this->registry_whe = true;
+          this->registry_addr = out;
+          this->registry_num = 8;
+        }
         out = (int64_t)this->memory->getLong(out, &cycles);
       }
       else
@@ -1355,9 +1440,13 @@ void Simulator::memoryAccess()
     if (this->dReg.stall)
     {
       if (this->dReg.rs1 == destReg)
+      {
         this->dReg.op1 = out;
+      }
       if (this->dReg.rs2 == destReg)
+      {
         this->dReg.op2 = out;
+      }
       this->memoryWriteBack = true;
       this->memoryWBReg = destReg;
       this->history.dataHazardCount++;
@@ -1418,8 +1507,10 @@ void Simulator::writeBack()
           this->dRegNew.op1 = this->mReg.out;
           this->history.dataHazardCount++;
           if (verbose)
+          {
             printf("  Forward Data %s to Decode op1\n",
                    REGNAME[this->mReg.destReg]);
+          }
         }
       }
     }
@@ -1437,12 +1528,13 @@ void Simulator::writeBack()
           this->dRegNew.op2 = this->mReg.out;
           this->history.dataHazardCount++;
           if (verbose)
+          {
             printf("  Forward Data %s to Decode op2\n",
                    REGNAME[this->mReg.destReg]);
+          }
         }
       }
     }
-
     // Real Write Back
     this->reg[this->mReg.destReg] = this->mReg.out;
   }

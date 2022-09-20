@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <set>
 
 #include "BranchPredictor.h"
 #include "MemoryManager.h"
@@ -167,7 +168,7 @@ namespace RISCV
   inline bool isReadMem(Inst inst)
   {
     if (inst == LB || inst == LH || inst == LW || inst == LD || inst == LBU ||
-        inst == LHU || inst == LWU)
+        inst == LHU || inst == LWU || inst == LRW || inst == LRD || inst == SCW || inst == SCD)
     {
       return true;
     }
@@ -302,6 +303,11 @@ private:
 
   std::string getRegInfoStr();
   void panic(const char *format, ...);
+
+  /* Registry the first addr and num */
+  uint32_t registry_addr;
+  uint32_t registry_num;
+  bool registry_whe;
 };
 
 #endif

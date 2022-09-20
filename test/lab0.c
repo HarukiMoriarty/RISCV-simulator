@@ -34,9 +34,9 @@ int main()
 {
   int res;
 
-  dst = 1;
+  dst = 2;
 
-  for (int i = 0; i < 2; ++i)
+  for (int i = 0; i < 3; ++i)
   {
     res = CAS(&dst, 211, i);
     if (res)
